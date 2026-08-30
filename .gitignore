@@ -7,3 +7,5 @@ target/
 PROGRESS.md
 .specstory/
 .cursorindexingignore
+build/
+imgui.ini
