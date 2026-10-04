@@ -1,12 +1,21 @@
 # Candidate Guide
 
-Write your logic in `src/main/java/candidate/CandidateController.java`.
-That's the exact file the framework calls.
+Write your logic in `src/main/cpp/candidate/CandidateController.hpp`.
+That's the exact class the framework calls.
 
-You don't need to touch anything outside `src/main/java/candidate/`. If you
+You don't need to touch anything outside `src/main/cpp/candidate/`. If you
 want more classes, add them in there too, that folder is yours to extend
-however you like. Nothing outside it needs to change, and nothing outside
-it should.
+however you like. Header-only additions need no build changes. The one
+exception to "nothing outside it": if you add a `.cpp` file, list it in the
+`territory_capture_lib` sources in `CMakeLists.txt` so it gets compiled.
+
+Build and run from the repository root (see `README.md` for setup):
+
+```
+cmake -S . -B build && cmake --build build -j
+./build/territory_capture_gui     # watch a match
+./build/territory_capture         # headless: Enemy State Machine vs. you
+```
 
 Inside `candidate/`, `examples/` has a couple of read-only implementations
 worth studying. There's also a more advanced opponent to practice against,
@@ -27,11 +36,12 @@ shown as "Enemy State Machine" in the GUI.
 
 ## `AgentController`
 
-This is the interface `CandidateController` implements.
+This is the abstract base class `CandidateController` derives from
+(`territorygame::api::AgentController`).
 
 ### takeTurn(game)
-```
-void takeTurn(GameApi game)
+```cpp
+void takeTurn(GameApi& game) override
 ```
 Put your decision-making here. You never call this method yourself. The
 framework calls it for you, whenever it's your turn.
@@ -47,8 +57,8 @@ If the direction you pick comes back `INVALID`, nothing happens and
 turn.
 
 ### getDebugState()
-```
-default String getDebugState() { return null; }
+```cpp
+std::optional<std::string> getDebugState() const override  // default: std::nullopt
 ```
 Optional. Return a short label for whatever state you think
 you're in (an enum's name works well), and the GUI shows it next to your
@@ -61,156 +71,167 @@ Your one-turn snapshot of the match. Read what you need, then call
 `game.move(direction)` once.
 
 ### getAgentPosition()
-```
-GridPosition getAgentPosition()
+```cpp
+GridPosition getAgentPosition() const
 ```
 Where you are right now.
 
 ### getRespawnPosition()
-```
-GridPosition getRespawnPosition()
+```cpp
+GridPosition getRespawnPosition() const
 ```
 Where you reappear after dying.
 
 ### getOwnedTerritoryCellCount()
-```
-int getOwnedTerritoryCellCount()
+```cpp
+int getOwnedTerritoryCellCount() const
 ```
 How many cells you currently own.
 
 ### getOpponentTerritoryCellCount()
-```
-int getOpponentTerritoryCellCount()
+```cpp
+int getOpponentTerritoryCellCount() const
 ```
 How many cells the opponent currently owns.
 
 ### getRemainingTurns()
-```
-int getRemainingTurns()
+```cpp
+int getRemainingTurns() const
 ```
 How many turns you have left.
 
 ### getActiveTrail()
-```
-List<GridPosition> getActiveTrail()
+```cpp
+std::vector<GridPosition> getActiveTrail() const
 ```
 Your current trail, oldest cell first. Empty if you're standing on your own
 territory right now.
 
 ### getVisibleGrid()
+```cpp
+std::vector<std::vector<VisibleCell>> getVisibleGrid() const
 ```
-VisibleCell[][] getVisibleGrid()
-```
-The cells you can currently see, centered on you. Index it `[y][x]`. Each
+The cells you can currently see, centered on you. Index it `[y][x]`. It's
+returned by value, so grab it once per turn rather than calling it in a
+loop. Each
 `VisibleCell` carries its real board position too, so you never have to
 convert window coordinates to board coordinates yourself.
 
 ### getBoardWidth() / getBoardHeight()
-```
-int getBoardWidth()
-int getBoardHeight()
+```cpp
+int getBoardWidth() const
+int getBoardHeight() const
 ```
 The size of the whole board (not just what you can see).
 
 ### move(direction)
-```
+```cpp
 MoveResult move(Direction direction)
 ```
 Try to move one step. Returns what happened.
 
 ## Types
 
+All of these live in namespace `territorygame::api`.
+
 ### GridPosition
+```cpp
+struct GridPosition { int x; int y; };
 ```
-record GridPosition(int x, int y)
-```
-A cell on the board. `(0, 0)` is the top-left corner.
+A cell on the board. `(0, 0)` is the top-left corner; x increases right, y
+increases down. Supports `==`/`!=` and has a `std::hash` specialization, so
+it works as a key in `std::unordered_map`/`std::unordered_set`.
 
 ### VisibleCell
-```
-record VisibleCell(GridPosition position, CellViewType type)
+```cpp
+struct VisibleCell { GridPosition position; CellViewType type; };
 ```
 One cell you can see, and what's in it.
 
 ### Direction
-```
-enum Direction { NORTH, SOUTH, EAST, WEST }
+```cpp
+enum class Direction { NORTH, SOUTH, EAST, WEST };
+inline constexpr std::array<Direction, 4> DIRECTIONS{...};  // all four, for looping
 ```
 
 ### MoveResult
-```
-enum MoveResult { MOVED, CAPTURED, DIED, INVALID }
+```cpp
+enum class MoveResult { MOVED, CAPTURED, DIED, INVALID };
 ```
 What `move()` just did: `MOVED` (normal step), `CAPTURED` (your trail
 closed), `DIED` (you hit a trail), or `INVALID` (nothing happened).
 
 ### CellViewType
-```
-enum CellViewType {
+```cpp
+enum class CellViewType {
     FREE, SELF_TERRITORY, OPPONENT_TERRITORY,
     SELF_TRAIL, OPPONENT_TRAIL, SELF_AGENT, OPPONENT_AGENT
-}
+};
 ```
 What's in a cell you can see. You'll never see the opponent's real player
 number, only `SELF_*` or `OPPONENT_*`. If more than one thing is true about
-a cell, the one listed first here wins: an agent standing on a trail shows
-as the agent, not the trail.
+a cell, precedence is agent > trail > territory > free: an agent standing on
+a trail shows as the agent, not the trail.
 
-## Helpers (`territorygame.helpers`)
+## Helpers (`territorygame::helpers`)
 
 Basic board math you shouldn't have to write yourself. Free to use from
-`CandidateController`.
+`CandidateController`. `MovementUtils` functions are all `static`; include
+`territorygame/helpers/MovementUtils.hpp` and
+`territorygame/helpers/ObservedBoard.hpp`.
 
 ### MovementUtils.nextPosition
-```
+```cpp
 GridPosition nextPosition(GridPosition position, Direction direction)
 ```
 The cell one step away in a direction.
 
 ### MovementUtils.isWithinBoard
-```
-boolean isWithinBoard(GridPosition position, int width, int height)
+```cpp
+bool isWithinBoard(GridPosition position, int width, int height)
 ```
 Is this cell actually on the board?
 
 ### MovementUtils.isValidMove
-```
-boolean isValidMove(GameApi game, Direction direction)
+```cpp
+bool isValidMove(const GameApi& game, Direction direction)
 ```
 Would this move be on the board and not walk into the opponent's agent?
 **This does not check trails.** Walking into your own trail (or theirs)
 still counts as "valid" here. That part is on you.
 
 ### MovementUtils.validDirections
-```
-List<Direction> validDirections(GameApi game)
+```cpp
+std::vector<Direction> validDirections(const GameApi& game)
 ```
 All directions that pass `isValidMove` right now.
 
 ### MovementUtils.manhattanDistance
-```
+```cpp
 int manhattanDistance(GridPosition a, GridPosition b)
 ```
 Grid distance between two cells (no diagonals).
 
 ### MovementUtils.findCell
-```
-Optional<VisibleCell> findCell(VisibleCell[][] visibleGrid, GridPosition position)
+```cpp
+std::optional<VisibleCell> findCell(
+    const std::vector<std::vector<VisibleCell>>& visibleGrid, GridPosition position)
 ```
 Look up one cell in a visible grid by its board position.
 
 ### MovementUtils.randomDirection
+```cpp
+Direction randomDirection(std::mt19937_64& random)
 ```
-Direction randomDirection(Random random)
-```
-Picks one of the four directions at random.
+Picks one of the four directions at random. Keep the generator as a member
+of your controller so it isn't reseeded every turn.
 
 ### ObservedBoard
-```
+```cpp
 ObservedBoard(int width, int height)
-void update(VisibleCell[][] visibleGrid)   // call this each turn
-Optional<CellViewType> get(GridPosition position)
-boolean hasObserved(GridPosition position)
+void update(const std::vector<std::vector<VisibleCell>>& visibleGrid)   // call this each turn
+std::optional<CellViewType> get(GridPosition position) const
+bool hasObserved(GridPosition position) const
 void clear()
 ```
 Remembers the last thing you saw at each cell, so you can reason about

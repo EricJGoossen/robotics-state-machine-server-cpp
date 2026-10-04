@@ -46,60 +46,76 @@ namespace territorygame::controller {
 // regardless of its length.
 class EnemyStateMachine final : public territorygame::api::AgentController {
 public:
-    EnemyStateMachine();
-    // Two instances of this same deterministic logic need different seeds, or they'll play out identically for long stretches.
-    explicit EnemyStateMachine(int64_t seed);
+  EnemyStateMachine();
+  // Two instances of this same deterministic logic need different seeds, or
+  // they'll play out identically for long stretches.
+  explicit EnemyStateMachine(int64_t seed);
 
-    void takeTurn(territorygame::api::GameApi& game) override;
-    std::optional<std::string> getDebugState() const override;
+  void takeTurn(territorygame::api::GameApi &game) override;
+  std::optional<std::string> getDebugState() const override;
 
 private:
-    enum class State { DEFENSIVE, RECEDING, AGGRESSIVE, EXPANDING, WANDERING };
+  enum class State { DEFENSIVE, RECEDING, AGGRESSIVE, EXPANDING, WANDERING };
 
-    static constexpr int MAX_TRAIL_BEFORE_RETURN = 8;
-    static constexpr int SAFETY_TURN_BUFFER = 4;
-    static constexpr int CONSOLIDATE_TURNS_THRESHOLD = 30;
-    static constexpr int WANDER_OPENNESS_TOLERANCE = 1;
-    static constexpr double RANDOM_WANDER_CHANCE = 0.01;
+  static constexpr int MAX_TRAIL_BEFORE_RETURN = 8;
+  static constexpr int SAFETY_TURN_BUFFER = 4;
+  static constexpr int CONSOLIDATE_TURNS_THRESHOLD = 30;
+  static constexpr int WANDER_OPENNESS_TOLERANCE = 1;
+  static constexpr double RANDOM_WANDER_CHANCE = 0.01;
 
-    // ---- State selection ----
-    State decideState(territorygame::api::GameApi& game, State previousState);
-    bool shouldRecede(territorygame::api::GameApi& game);
-    bool shouldBeAggressive(territorygame::api::GameApi& game);
-    bool opponentIsThreateninglyClose(territorygame::api::GameApi& game);
-    bool isEndgameWithLead(territorygame::api::GameApi& game);
+  // ---- State selection ----
+  State decideState(territorygame::api::GameApi &game, State previousState);
+  bool shouldRecede(territorygame::api::GameApi &game);
+  bool shouldBeAggressive(territorygame::api::GameApi &game);
+  bool opponentIsThreateninglyClose(territorygame::api::GameApi &game);
+  bool isEndgameWithLead(territorygame::api::GameApi &game);
 
-    // ---- Direction selection ----
-    territorygame::api::Direction chooseDirection(territorygame::api::GameApi& game, State state);
-    territorygame::api::Direction pickDefensive(territorygame::api::GameApi& game);
-    territorygame::api::Direction pickExpanding(territorygame::api::GameApi& game);
-    territorygame::api::Direction pickReceding(territorygame::api::GameApi& game);
-    territorygame::api::Direction pickAggressive(territorygame::api::GameApi& game);
-    std::optional<territorygame::api::Direction> huntOpponentTrail(territorygame::api::GameApi& game);
-    territorygame::api::Direction pickWandering(territorygame::api::GameApi& game);
-    territorygame::api::Direction pickUniformlyRandom(territorygame::api::GameApi& game);
+  // ---- Direction selection ----
+  territorygame::api::Direction
+  chooseDirection(territorygame::api::GameApi &game, State state);
+  territorygame::api::Direction
+  pickDefensive(territorygame::api::GameApi &game);
+  territorygame::api::Direction
+  pickExpanding(territorygame::api::GameApi &game);
+  territorygame::api::Direction pickReceding(territorygame::api::GameApi &game);
+  territorygame::api::Direction
+  pickAggressive(territorygame::api::GameApi &game);
+  std::optional<territorygame::api::Direction>
+  huntOpponentTrail(territorygame::api::GameApi &game);
+  territorygame::api::Direction
+  pickWandering(territorygame::api::GameApi &game);
+  territorygame::api::Direction
+  pickUniformlyRandom(territorygame::api::GameApi &game);
 
-    // Picks the candidate with the smallest key(direction); ties broken by
-    // first occurrence, matching Stream.min()'s stable behavior over an
-    // ordered source. Falls back to fallback() if candidates is empty.
-    territorygame::api::Direction chooseBest(
-        const std::vector<territorygame::api::Direction>& candidates,
-        const std::function<int(territorygame::api::Direction)>& key);
+  // Picks the candidate with the smallest key(direction); ties broken by
+  // first occurrence, matching Stream.min()'s stable behavior over an
+  // ordered source. Falls back to fallback() if candidates is empty.
+  territorygame::api::Direction
+  chooseBest(const std::vector<territorygame::api::Direction> &candidates,
+             const std::function<int(territorygame::api::Direction)> &key);
 
-    // ---- Board reading ----
-    std::vector<territorygame::api::Direction> safeDirections(territorygame::api::GameApi& game);
-    std::vector<territorygame::api::Direction> huntableDirections(territorygame::api::GameApi& game);
-    int openNeighborCount(territorygame::api::GameApi& game, territorygame::api::Direction direction);
-    std::optional<territorygame::api::GridPosition> nearestVisible(
-        territorygame::api::GameApi& game, territorygame::api::CellViewType type);
-    territorygame::api::GridPosition destination(territorygame::api::GameApi& game, territorygame::api::Direction direction);
-    territorygame::api::CellViewType typeAt(territorygame::api::GameApi& game, territorygame::api::GridPosition position);
-    territorygame::api::Direction fallback();
+  // ---- Board reading ----
+  std::vector<territorygame::api::Direction>
+  safeDirections(territorygame::api::GameApi &game);
+  std::vector<territorygame::api::Direction>
+  huntableDirections(territorygame::api::GameApi &game);
+  int openNeighborCount(territorygame::api::GameApi &game,
+                        territorygame::api::Direction direction);
+  std::optional<territorygame::api::GridPosition>
+  nearestVisible(territorygame::api::GameApi &game,
+                 territorygame::api::CellViewType type);
+  territorygame::api::GridPosition
+  destination(territorygame::api::GameApi &game,
+              territorygame::api::Direction direction);
+  territorygame::api::CellViewType
+  typeAt(territorygame::api::GameApi &game,
+         territorygame::api::GridPosition position);
+  territorygame::api::Direction fallback();
 
-    std::mt19937_64 random_;
-    State currentState_ = State::EXPANDING;
-    int previousOwnedTerritoryCount_ = 0;
-    bool firstMove_ = true;
+  std::mt19937_64 random_;
+  State currentState_ = State::EXPANDING;
+  int previousOwnedTerritoryCount_ = 0;
+  bool firstMove_ = true;
 };
 
 } // namespace territorygame::controller
