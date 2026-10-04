@@ -1,9 +1,16 @@
-target/
-*.class
+# Build output
+build/
+
+# Editor / tooling
 .idea/
-*.iml
 .vscode/
+.cache/
+.clangd
 .DS_Store
-PROGRESS.md
 .specstory/
 .cursorindexingignore
+.claude/settings.local.json
+
+# Local runtime files
+imgui.ini
+PROGRESS.md
