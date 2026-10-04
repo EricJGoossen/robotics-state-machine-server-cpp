@@ -2,8 +2,9 @@
 
 #include <vector>
 
-#include "territorygame/api/CellViewType.hpp"
 #include "territorygame/api/GridPosition.hpp"
+#include "territorygame/api/OccupantView.hpp"
+#include "territorygame/api/TerritoryView.hpp"
 #include "territorygame/api/VisibleCell.hpp"
 #include "territorygame/domain/Agent.hpp"
 #include "territorygame/domain/Board.hpp"
@@ -13,8 +14,8 @@
 namespace territorygame::visibility {
 
 // Produces candidate-facing observations from authoritative state, owning
-// the translation from internal player identities to relative
-// SELF_*/OPPONENT_* types.
+// the translation from internal player identities to relative SELF/OPPONENT
+// occupant and territory views.
 class VisibilityService {
 public:
     explicit VisibilityService(int windowSize);
@@ -25,9 +26,13 @@ public:
         const territorygame::domain::GameState& state, territorygame::domain::PlayerId viewerId) const;
 
 private:
-    territorygame::api::CellViewType classify(
+    territorygame::api::OccupantView classifyOccupant(
         const territorygame::domain::Board& board, territorygame::api::GridPosition position,
         const territorygame::domain::Agent& viewerAgent, const territorygame::domain::Agent& opponentAgent,
+        territorygame::domain::PlayerId viewerId, territorygame::domain::PlayerId opponentId) const;
+
+    territorygame::api::TerritoryView classifyTerritory(
+        const territorygame::domain::Board& board, territorygame::api::GridPosition position,
         territorygame::domain::PlayerId viewerId, territorygame::domain::PlayerId opponentId) const;
 
     int windowSize_;

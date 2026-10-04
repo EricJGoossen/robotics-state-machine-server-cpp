@@ -76,7 +76,8 @@ TEST(MovementUtilsTest, isValidMoveRejectsOutOfBoundsWithoutNeedingVisibleGrid) 
 TEST(MovementUtilsTest, isValidMoveRejectsOpponentAgentCell) {
     GridPosition position{2, 2};
     GridPosition opponentAt{3, 2};
-    std::vector<std::vector<VisibleCell>> grid{{VisibleCell{opponentAt, CellViewType::OPPONENT_AGENT}}};
+    std::vector<std::vector<VisibleCell>> grid{
+        {VisibleCell{opponentAt, OccupantView::OPPONENT_AGENT, TerritoryView::UNOWNED}}};
     StubGameApi game(position, 5, 5, grid);
 
     EXPECT_FALSE(MovementUtils::isValidMove(game, Direction::EAST));
@@ -85,7 +86,8 @@ TEST(MovementUtilsTest, isValidMoveRejectsOpponentAgentCell) {
 TEST(MovementUtilsTest, isValidMoveAcceptsFreeInBoundsCell) {
     GridPosition position{2, 2};
     GridPosition destination{3, 2};
-    std::vector<std::vector<VisibleCell>> grid{{VisibleCell{destination, CellViewType::FREE}}};
+    std::vector<std::vector<VisibleCell>> grid{
+        {VisibleCell{destination, OccupantView::EMPTY, TerritoryView::UNOWNED}}};
     StubGameApi game(position, 5, 5, grid);
 
     EXPECT_TRUE(MovementUtils::isValidMove(game, Direction::EAST));
@@ -93,16 +95,19 @@ TEST(MovementUtilsTest, isValidMoveAcceptsFreeInBoundsCell) {
 
 TEST(MovementUtilsTest, findCellReturnsTheCellAtAMatchingPosition) {
     GridPosition target{3, 2};
-    std::vector<std::vector<VisibleCell>> grid{{VisibleCell{target, CellViewType::OPPONENT_TERRITORY}}};
+    std::vector<std::vector<VisibleCell>> grid{
+        {VisibleCell{target, OccupantView::EMPTY, TerritoryView::OPPONENT}}};
 
     auto found = MovementUtils::findCell(grid, target);
 
     EXPECT_TRUE(found.has_value());
-    EXPECT_EQ(found->type, CellViewType::OPPONENT_TERRITORY);
+    EXPECT_EQ(found->occupant, OccupantView::EMPTY);
+    EXPECT_EQ(found->territory, TerritoryView::OPPONENT);
 }
 
 TEST(MovementUtilsTest, findCellReturnsEmptyWhenPositionIsNotInTheGrid) {
-    std::vector<std::vector<VisibleCell>> grid{{VisibleCell{GridPosition{3, 2}, CellViewType::FREE}}};
+    std::vector<std::vector<VisibleCell>> grid{
+        {VisibleCell{GridPosition{3, 2}, OccupantView::EMPTY, TerritoryView::UNOWNED}}};
 
     EXPECT_FALSE(MovementUtils::findCell(grid, GridPosition{9, 9}).has_value());
 }
@@ -112,8 +117,10 @@ TEST(MovementUtilsTest, validDirectionsExcludesOutOfBoundsAndOpponentAgentCells)
     GridPosition east{1, 0};
     GridPosition south{0, 1};
     std::vector<std::vector<VisibleCell>> grid{
-        {VisibleCell{position, CellViewType::SELF_AGENT}, VisibleCell{east, CellViewType::OPPONENT_AGENT}},
-        {VisibleCell{south, CellViewType::FREE}, VisibleCell{GridPosition{1, 1}, CellViewType::FREE}}};
+        {VisibleCell{position, OccupantView::SELF_AGENT, TerritoryView::UNOWNED},
+         VisibleCell{east, OccupantView::OPPONENT_AGENT, TerritoryView::UNOWNED}},
+        {VisibleCell{south, OccupantView::EMPTY, TerritoryView::UNOWNED},
+         VisibleCell{GridPosition{1, 1}, OccupantView::EMPTY, TerritoryView::UNOWNED}}};
     StubGameApi game(position, 5, 5, grid);
 
     auto valid = MovementUtils::validDirections(game);

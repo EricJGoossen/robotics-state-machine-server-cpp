@@ -1,6 +1,6 @@
 #include "candidate/examples/BasicStateMachine.hpp"
 
-#include "territorygame/api/CellViewType.hpp"
+#include "territorygame/api/OccupantView.hpp"
 #include "territorygame/helpers/MovementUtils.hpp"
 
 namespace candidate::examples {
@@ -95,7 +95,7 @@ bool BasicStateMachine::isSafeMove(GameApi& game, Direction direction) {
     if (!cell.has_value()) {
         return true;
     }
-    return cell->type != CellViewType::SELF_TRAIL;
+    return cell->occupant != OccupantView::SELF_TRAIL;
 }
 
 } // namespace candidate::examples

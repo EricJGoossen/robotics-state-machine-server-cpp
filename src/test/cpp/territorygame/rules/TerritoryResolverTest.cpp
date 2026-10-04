@@ -62,6 +62,21 @@ TEST(TerritoryResolverTest, captureFlipsOpponentTerritoryInsideTheEnclosedRegion
     EXPECT_EQ(state.getBoard().territoryCount(opponent), 1);
 }
 
+TEST(TerritoryResolverTest, captureDoesNotClaimOpponentStartingTerritory) {
+    GameState state = territorygame::test::twoPlayerState(
+        8, 8, HOME, {HOME}, ENCLOSED, {ENCLOSED}, 10);
+    for (const auto& cell : PERIMETER) {
+        state.getBoard().setTrailOwner(cell, capturer);
+        state.getPlayer(capturer).getAgent().appendTrail(cell);
+    }
+    TerritoryResolver resolver;
+
+    resolver.applyCapture(state, capturer);
+
+    EXPECT_EQ(state.getBoard().territoryOwnerAt(ENCLOSED), opponent);
+    EXPECT_EQ(state.getBoard().territoryCount(opponent), 1);
+}
+
 TEST(TerritoryResolverTest, unrelatedOpponentTrailInsideTheEnclosedRegionIsUntouched) {
     GameState state = buildStateWithPendingTrail();
     state.getBoard().setTrailOwner(ENCLOSED, opponent);

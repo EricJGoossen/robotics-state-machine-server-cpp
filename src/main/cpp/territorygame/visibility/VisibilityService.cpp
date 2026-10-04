@@ -4,8 +4,9 @@
 
 namespace territorygame::visibility {
 
-using territorygame::api::CellViewType;
 using territorygame::api::GridPosition;
+using territorygame::api::OccupantView;
+using territorygame::api::TerritoryView;
 using territorygame::api::VisibleCell;
 using territorygame::domain::Agent;
 using territorygame::domain::Board;
@@ -33,41 +34,44 @@ std::vector<std::vector<VisibleCell>> VisibilityService::computeVisibleGrid(
     for (int y = minY; y <= maxY; y++) {
         for (int x = minX; x <= maxX; x++) {
             GridPosition position{x, y};
-            CellViewType type = classify(
-                board, position, viewer.getAgent(), opponent.getAgent(), viewerId, opponent.getId());
-            grid[y - minY][x - minX] = VisibleCell{position, type};
+            grid[y - minY][x - minX] = VisibleCell{
+                position,
+                classifyOccupant(board, position, viewer.getAgent(), opponent.getAgent(), viewerId, opponent.getId()),
+                classifyTerritory(board, position, viewerId, opponent.getId())};
         }
     }
     return grid;
 }
 
-CellViewType VisibilityService::classify(
+OccupantView VisibilityService::classifyOccupant(
     const Board& board, GridPosition position, const Agent& viewerAgent, const Agent& opponentAgent,
     PlayerId viewerId, PlayerId opponentId) const {
     if (position == viewerAgent.getPosition()) {
-        return CellViewType::SELF_AGENT;
+        return OccupantView::SELF_AGENT;
     }
     if (position == opponentAgent.getPosition()) {
-        return CellViewType::OPPONENT_AGENT;
+        return OccupantView::OPPONENT_AGENT;
     }
-
     auto trailOwner = board.trailOwnerAt(position);
     if (trailOwner == viewerId) {
-        return CellViewType::SELF_TRAIL;
+        return OccupantView::SELF_TRAIL;
     }
     if (trailOwner == opponentId) {
-        return CellViewType::OPPONENT_TRAIL;
+        return OccupantView::OPPONENT_TRAIL;
     }
+    return OccupantView::EMPTY;
+}
 
+TerritoryView VisibilityService::classifyTerritory(
+    const Board& board, GridPosition position, PlayerId viewerId, PlayerId opponentId) const {
     auto territoryOwner = board.territoryOwnerAt(position);
     if (territoryOwner == viewerId) {
-        return CellViewType::SELF_TERRITORY;
+        return TerritoryView::SELF;
     }
     if (territoryOwner == opponentId) {
-        return CellViewType::OPPONENT_TERRITORY;
+        return TerritoryView::OPPONENT;
     }
-
-    return CellViewType::FREE;
+    return TerritoryView::UNOWNED;
 }
 
 } // namespace territorygame::visibility

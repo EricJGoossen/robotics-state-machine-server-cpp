@@ -35,26 +35,37 @@ void BoardPanel::paint(
         1, std::min(
                static_cast<int>(availableSize.x) / snapshot->width,
                static_cast<int>(availableSize.y) / snapshot->height));
+    // Centers the board within whatever region it's given, rather than
+    // pinning it to the top-left, so extra space splits evenly on both sides.
+    float centeredX = origin.x + (availableSize.x - cellSize * snapshot->width) / 2.0f;
+    float centeredY = origin.y + (availableSize.y - cellSize * snapshot->height) / 2.0f;
+    ImVec2 centeredOrigin(centeredX, centeredY);
 
-    paintCells(drawList, origin, cellSize, *snapshot);
-    paintAgents(drawList, origin, cellSize, *snapshot);
-    paintVisibilityWindows(drawList, origin, cellSize, *snapshot);
+    paintCells(drawList, centeredOrigin, cellSize, *snapshot);
+    paintAgents(drawList, centeredOrigin, cellSize, *snapshot);
+    paintVisibilityWindows(drawList, centeredOrigin, cellSize, *snapshot);
 }
 
 void BoardPanel::paintCells(
     ImDrawList* drawList, ImVec2 origin, int cellSize, const GameSnapshot& snapshot) const {
+    // Territory fill first, then trail as a smaller inset square, so a
+    // trail cutting across owned land no longer hides which player's
+    // territory lies underneath it.
     for (int y = 0; y < snapshot.height; y++) {
         for (int x = 0; x < snapshot.width; x++) {
             const GameSnapshot::CellSnapshot& cell = snapshot.cells[static_cast<size_t>(y)][static_cast<size_t>(x)];
-            ImU32 color = FREE_COLOR;
-            if (cell.trailOwner.has_value()) {
-                color = TRAIL_COLORS[cell.trailOwner->index % 2];
-            } else if (cell.territoryOwner.has_value()) {
-                color = TERRITORY_COLORS[cell.territoryOwner->index % 2];
-            }
+            ImU32 territoryColor =
+                cell.territoryOwner.has_value() ? TERRITORY_COLORS[cell.territoryOwner->index % 2] : FREE_COLOR;
             ImVec2 min(origin.x + x * cellSize, origin.y + y * cellSize);
             ImVec2 max(min.x + cellSize, min.y + cellSize);
-            drawList->AddRectFilled(min, max, color);
+            drawList->AddRectFilled(min, max, territoryColor);
+
+            if (cell.trailOwner.has_value()) {
+                int inset = std::max(1, cellSize / 4);
+                ImVec2 trailMin(min.x + inset, min.y + inset);
+                ImVec2 trailMax(max.x - inset, max.y - inset);
+                drawList->AddRectFilled(trailMin, trailMax, TRAIL_COLORS[cell.trailOwner->index % 2]);
+            }
         }
     }
 

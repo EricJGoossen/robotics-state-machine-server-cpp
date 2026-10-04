@@ -1,5 +1,7 @@
 #include "territorygame/gui/GameWindow.hpp"
 
+#include <cmath>
+
 #include "imgui.h"
 
 namespace territorygame::gui {
@@ -13,12 +15,18 @@ using territorygame::engine::GameSnapshot;
 namespace {
 constexpr int MIN_TURN_DELAY_MILLIS = 0;
 constexpr int MAX_TURN_DELAY_MILLIS = 500;
+// Slider travel is 0-1000; delay is mapped through a square curve so the
+// fast end (the range actually worth watching) isn't cramped into the left half.
+constexpr int SPEED_SLIDER_MAX = 1000;
+constexpr int REVIEW_SKIP = 10;
+constexpr float SIDE_PANEL_WIDTH = 300.0f;
 } // namespace
 
 GameWindow::GameWindow(GameConfig config)
     : config_(config),
       boardPanel_(config.boardWidth, config.boardHeight),
-      turnDelayMillis_(config.autoPlayTurnDelayMillis) {
+      speedSliderValue_(delayToSlider(
+          std::max(MIN_TURN_DELAY_MILLIS, std::min(MAX_TURN_DELAY_MILLIS, config.autoPlayTurnDelayMillis)))) {
     auto initialControllers = currentSelections();
     engine_ = std::make_unique<GameEngine>(config_, initialControllers);
     engine_->addObserver(this);
@@ -42,6 +50,7 @@ std::vector<std::shared_ptr<AgentController>> GameWindow::currentSelections() {
 void GameWindow::onGameStateChanged(const GameSnapshot& snapshot) {
     std::lock_guard<std::mutex> lock(snapshotMutex_);
     latestSnapshot_ = snapshot;
+    hasNewSnapshot_ = true;
 }
 
 void GameWindow::render() {
@@ -52,16 +61,47 @@ void GameWindow::render() {
         | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::Begin("Territory Capture", nullptr, flags);
 
-    std::optional<GameSnapshot> snapshotCopy;
     {
         std::lock_guard<std::mutex> lock(snapshotMutex_);
-        snapshotCopy = latestSnapshot_;
+        if (hasNewSnapshot_ && latestSnapshot_.has_value()) {
+            ingestEngineSnapshot(snapshotHistory_, *latestSnapshot_);
+            hasNewSnapshot_ = false;
+        }
     }
-    const GameSnapshot* snapshot = snapshotCopy.has_value() ? &(*snapshotCopy) : nullptr;
 
+    // Rendered before the snapshot pointer below is captured, so a Back/
+    // Forward click this frame is reflected in the board and status drawn
+    // later in this same frame rather than lagging by one.
     renderControls();
+
+    const GameSnapshot* snapshot = snapshotHistory_.size() > 0 ? &snapshotHistory_.current() : nullptr;
+
     renderError(snapshot);
+
+    ImVec2 mainAreaSize = ImGui::GetContentRegionAvail();
+    // Status text needs a thin strip reserved below the board/side-panel row.
+    float statusHeight = 32.0f;
+    ImGui::BeginChild("MainArea", ImVec2(mainAreaSize.x, mainAreaSize.y - statusHeight), false);
+
+    float boardColumnWidth = std::max(100.0f, ImGui::GetContentRegionAvail().x - SIDE_PANEL_WIDTH - 12.0f);
+    ImGui::BeginChild("BoardColumn", ImVec2(boardColumnWidth, 0), false);
     renderBoard(snapshot);
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginChild("SideColumn", ImVec2(SIDE_PANEL_WIDTH, 0), false);
+    if (snapshot != nullptr) {
+        for (size_t i = 0; i < snapshot->players.size() && i < 2; i++) {
+            const auto& player = snapshot->players[i];
+            bool active = player.id == snapshot->activePlayerId;
+            renderPlayerCard(static_cast<int>(i), player, active);
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::EndChild();
+
     renderStatus(snapshot);
 
     ImGui::End();
@@ -110,6 +150,31 @@ void GameWindow::renderControls() {
         engine_->pause();
     }
     ImGui::SameLine();
+
+    bool canGoBack = snapshotHistory_.canGoBack();
+    bool canGoForward = snapshotHistory_.canGoForward();
+
+    ImGui::BeginDisabled(!canGoBack);
+    if (ImGui::Button("Back 10")) {
+        reviewBack(REVIEW_SKIP);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Back")) {
+        reviewBack(1);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!canGoForward);
+    if (ImGui::Button("Forward")) {
+        reviewForward(1);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Forward 10")) {
+        reviewForward(REVIEW_SKIP);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
     if (ImGui::Button("Step")) {
         engine_->step();
     }
@@ -123,15 +188,36 @@ void GameWindow::renderControls() {
     ImGui::SameLine();
     ImGui::Text("Fast");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
-    // Slider value is the turn delay in milliseconds: left (fast) is 0, right (slow) is the max.
-    if (ImGui::SliderInt("##speed", &turnDelayMillis_, MIN_TURN_DELAY_MILLIS, MAX_TURN_DELAY_MILLIS, "")) {
-        engine_->setTurnDelayMillis(turnDelayMillis_);
+    ImGui::SetNextItemWidth(160);
+    // Slider value is mapped through a square curve into the turn delay in
+    // milliseconds: left (fast) is 0, right (slow) is the max.
+    if (ImGui::SliderInt("##speed", &speedSliderValue_, 0, SPEED_SLIDER_MAX, "")) {
+        engine_->setTurnDelayMillis(sliderToDelay(speedSliderValue_));
     }
     ImGui::SameLine();
     ImGui::Text("Slow");
 
     ImGui::Separator();
+}
+
+// Inverse of sliderToDelay: place the handle so the given delay sits on the square curve.
+int GameWindow::delayToSlider(int delayMillis) {
+    double t = std::sqrt(static_cast<double>(delayMillis) / MAX_TURN_DELAY_MILLIS);
+    return static_cast<int>(std::lround(t * SPEED_SLIDER_MAX));
+}
+
+int GameWindow::sliderToDelay(int sliderValue) {
+    double t = static_cast<double>(sliderValue) / SPEED_SLIDER_MAX;
+    return static_cast<int>(std::lround(t * t * MAX_TURN_DELAY_MILLIS));
+}
+
+void GameWindow::reviewBack(int steps) {
+    engine_->pause();
+    snapshotHistory_.back(steps);
+}
+
+void GameWindow::reviewForward(int steps) {
+    snapshotHistory_.forward(steps);
 }
 
 void GameWindow::renderError(const GameSnapshot* snapshot) {
@@ -145,11 +231,7 @@ void GameWindow::renderError(const GameSnapshot* snapshot) {
 }
 
 void GameWindow::renderBoard(const GameSnapshot* snapshot) {
-    ImVec2 preferred = boardPanel_.preferredSize();
-    // Reserve space for the status panel below so the board doesn't crowd it out.
-    float statusHeight = 190.0f;
-    ImVec2 available = ImGui::GetContentRegionAvail();
-    ImVec2 boardRegion(available.x, std::max(preferred.y, available.y - statusHeight));
+    ImVec2 boardRegion = ImGui::GetContentRegionAvail();
 
     ImGui::BeginChild("BoardPanel", boardRegion, true);
     ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -162,15 +244,6 @@ void GameWindow::renderBoard(const GameSnapshot* snapshot) {
 void GameWindow::renderStatus(const GameSnapshot* snapshot) {
     ImGui::BeginChild("StatusPanel", ImVec2(0, 0), false);
     if (snapshot != nullptr) {
-        for (size_t i = 0; i < snapshot->players.size() && i < 2; i++) {
-            const auto& player = snapshot->players[i];
-            bool active = player.id == snapshot->activePlayerId;
-            renderPlayerCard(static_cast<int>(i), player, active);
-            if (i == 0) {
-                ImGui::SameLine();
-            }
-        }
-
         std::string statusText;
         if (snapshot->gameOver) {
             statusText = "Game over -- " + winnerText(*snapshot);
@@ -188,6 +261,10 @@ void GameWindow::renderStatus(const GameSnapshot* snapshot) {
                 statusText += "-";
             }
         }
+        if (!snapshotHistory_.isAtLive()) {
+            statusText = "Reviewing " + std::to_string(snapshotHistory_.position()) + " / "
+                + std::to_string(snapshotHistory_.size()) + "   |   " + statusText;
+        }
         ImGui::Separator();
         float textWidth = ImGui::CalcTextSize(statusText.c_str()).x;
         ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - textWidth) / 2.0f));
@@ -198,7 +275,7 @@ void GameWindow::renderStatus(const GameSnapshot* snapshot) {
 
 void GameWindow::renderPlayerCard(int index, const GameSnapshot::PlayerSnapshot& player, bool active) {
     ImGui::BeginChild(
-        index == 0 ? "Player1Card" : "Player2Card", ImVec2(ImGui::GetContentRegionAvail().x / (index == 0 ? 2 : 1), 180),
+        index == 0 ? "Player1Card" : "Player2Card", ImVec2(0, ImGui::GetContentRegionAvail().y / (index == 0 ? 2.0f : 1.0f) - (index == 0 ? 6.0f : 0.0f)),
         true);
 
     std::string title = "Player " + std::to_string(player.id.index + 1) + (active ? " (active)" : "");
@@ -217,7 +294,17 @@ void GameWindow::renderPlayerCard(int index, const GameSnapshot::PlayerSnapshot&
     ImGui::Text("Kills: %d", player.killCount);
     ImGui::Text("Deaths: %d", player.deathCount);
     ImGui::Text("Turns left: %d", player.remainingTurns);
-    ImGui::Text("State: %s", player.debugState.has_value() ? player.debugState->c_str() : " ");
+
+    ImGui::Text("State:");
+    // Scrollable well rather than a single truncated line, since a
+    // controller's debug state can run longer than one line's width.
+    ImGui::BeginChild(
+        index == 0 ? "Player1State" : "Player2State", ImVec2(0, 0), true,
+        ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+    ImGui::TextUnformatted(player.debugState.has_value() ? player.debugState->c_str() : "");
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
 
     ImGui::EndChild();
 }

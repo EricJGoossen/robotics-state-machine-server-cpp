@@ -1,6 +1,7 @@
 #include "territorygame/controller/EnemyStateMachine.hpp"
 
 #include <limits>
+#include <sstream>
 
 #include "territorygame/helpers/MovementUtils.hpp"
 
@@ -30,15 +31,33 @@ void EnemyStateMachine::takeTurn(GameApi& game) {
     game.move(direction);
 }
 
-std::optional<std::string> EnemyStateMachine::getDebugState() const {
-    switch (currentState_) {
-        case State::DEFENSIVE: return "DEFENSIVE";
-        case State::RECEDING: return "RECEDING";
-        case State::AGGRESSIVE: return "AGGRESSIVE";
-        case State::EXPANDING: return "EXPANDING";
-        case State::WANDERING: return "WANDERING";
+namespace {
+std::string directionName(std::optional<Direction> direction) {
+    if (!direction.has_value()) {
+        return "null";
     }
-    return std::nullopt;
+    switch (*direction) {
+        case Direction::NORTH: return "NORTH";
+        case Direction::SOUTH: return "SOUTH";
+        case Direction::EAST: return "EAST";
+        case Direction::WEST: return "WEST";
+    }
+    return "null";
+}
+} // namespace
+
+std::optional<std::string> EnemyStateMachine::getDebugState() const {
+    std::string stateName;
+    switch (currentState_) {
+        case State::DEFENSIVE: stateName = "DEFENSIVE"; break;
+        case State::RECEDING: stateName = "RECEDING"; break;
+        case State::AGGRESSIVE: stateName = "AGGRESSIVE"; break;
+        case State::EXPANDING: stateName = "EXPANDING"; break;
+        case State::WANDERING: stateName = "WANDERING"; break;
+    }
+    std::ostringstream oss;
+    oss << stateName << " " << directionName(direction_) << ", bestOpenNeighborCount: " << bestOpenNeighborCount_;
+    return oss.str();
 }
 
 // ---- State selection ----------------------------------------------
@@ -79,13 +98,13 @@ bool EnemyStateMachine::shouldRecede(GameApi& game) {
 }
 
 bool EnemyStateMachine::shouldBeAggressive(GameApi& game) {
-    return nearestVisible(game, CellViewType::OPPONENT_TRAIL).has_value()
-        || nearestVisible(game, CellViewType::OPPONENT_TERRITORY).has_value();
+    return nearestOccupant(game, OccupantView::OPPONENT_TRAIL).has_value()
+        || nearestTerritory(game, TerritoryView::OPPONENT).has_value();
 }
 
 bool EnemyStateMachine::opponentIsThreateninglyClose(GameApi& game) {
     int threatDistance = static_cast<int>(game.getVisibleGrid().size()) / 2;
-    auto position = nearestVisible(game, CellViewType::OPPONENT_AGENT);
+    auto position = nearestOccupant(game, OccupantView::OPPONENT_AGENT);
     if (!position.has_value()) {
         return false;
     }
@@ -118,7 +137,10 @@ Direction EnemyStateMachine::pickDefensive(GameApi& game) {
 
 // Deterministically pushes toward whichever safe direction opens onto the most free space.
 Direction EnemyStateMachine::pickExpanding(GameApi& game) {
-    return chooseBest(safeDirections(game), [this, &game](Direction d) { return -openNeighborCount(game, d); });
+    Direction best = chooseBest(safeDirections(game), [this, &game](Direction d) { return -openNeighborCount(game, d); });
+    direction_ = best;
+    bestOpenNeighborCount_ = openNeighborCount(game, best);
+    return best;
 }
 
 // Stays inside our own territory if any safe move lands there (zero trail risk); otherwise heads for the nearest of it.
@@ -126,14 +148,14 @@ Direction EnemyStateMachine::pickReceding(GameApi& game) {
     auto safe = safeDirections(game);
     std::vector<Direction> withinTerritory;
     for (Direction d : safe) {
-        if (typeAt(game, destination(game, d)) == CellViewType::SELF_TERRITORY) {
+        if (territoryAt(game, destination(game, d)) == TerritoryView::SELF) {
             withinTerritory.push_back(d);
         }
     }
     if (!withinTerritory.empty()) {
         return chooseBest(withinTerritory, [this, &game](Direction d) { return -openNeighborCount(game, d); });
     }
-    auto visible = nearestVisible(game, CellViewType::SELF_TERRITORY);
+    auto visible = nearestTerritory(game, TerritoryView::SELF);
     GridPosition target = visible.has_value() ? *visible : game.getRespawnPosition();
     return chooseBest(safe, [&game, target](Direction d) {
         return MovementUtils::manhattanDistance(MovementUtils::nextPosition(game.getAgentPosition(), d), target);
@@ -146,7 +168,7 @@ Direction EnemyStateMachine::pickAggressive(GameApi& game) {
     if (hunted.has_value()) {
         return *hunted;
     }
-    auto visible = nearestVisible(game, CellViewType::OPPONENT_TERRITORY);
+    auto visible = nearestTerritory(game, TerritoryView::OPPONENT);
     GridPosition target = visible.has_value() ? *visible : game.getAgentPosition();
     return chooseBest(safeDirections(game), [&game, target](Direction d) {
         return MovementUtils::manhattanDistance(MovementUtils::nextPosition(game.getAgentPosition(), d), target);
@@ -155,7 +177,7 @@ Direction EnemyStateMachine::pickAggressive(GameApi& game) {
 
 // Shared by DEFENSIVE and AGGRESSIVE: a direction that closes on the opponent's visible trail, if one is visible at all.
 std::optional<Direction> EnemyStateMachine::huntOpponentTrail(GameApi& game) {
-    auto target = nearestVisible(game, CellViewType::OPPONENT_TRAIL);
+    auto target = nearestOccupant(game, OccupantView::OPPONENT_TRAIL);
     if (!target.has_value()) {
         return std::nullopt;
     }
@@ -222,9 +244,9 @@ std::vector<Direction> EnemyStateMachine::safeDirections(GameApi& game) {
                 game.getAgentPosition(), direction, game.getBoardWidth(), game.getBoardHeight())) {
             continue;
         }
-        CellViewType type = typeAt(game, destination(game, direction));
-        if (type != CellViewType::SELF_TRAIL && type != CellViewType::OPPONENT_TRAIL
-                && type != CellViewType::OPPONENT_AGENT) {
+        auto occupant = occupantAt(game, destination(game, direction));
+        if (occupant != OccupantView::SELF_TRAIL && occupant != OccupantView::OPPONENT_TRAIL
+                && occupant != OccupantView::OPPONENT_AGENT) {
             result.push_back(direction);
         }
     }
@@ -239,34 +261,43 @@ std::vector<Direction> EnemyStateMachine::huntableDirections(GameApi& game) {
                 game.getAgentPosition(), direction, game.getBoardWidth(), game.getBoardHeight())) {
             continue;
         }
-        CellViewType type = typeAt(game, destination(game, direction));
-        if (type != CellViewType::SELF_TRAIL && type != CellViewType::OPPONENT_AGENT) {
+        auto occupant = occupantAt(game, destination(game, direction));
+        if (occupant != OccupantView::SELF_TRAIL && occupant != OccupantView::OPPONENT_AGENT) {
             result.push_back(direction);
         }
     }
     return result;
 }
 
-// Count of FREE cells cardinally adjacent to the given direction's destination, a cheap open-space heuristic.
+// Count of on-board empty unowned cells cardinally adjacent to the destination. Off-board neighbors are not open.
 int EnemyStateMachine::openNeighborCount(GameApi& game, Direction direction) {
     GridPosition dest = destination(game, direction);
     int count = 0;
     for (Direction neighborDirection : DIRECTIONS) {
         GridPosition neighbor = MovementUtils::nextPosition(dest, neighborDirection);
-        if (typeAt(game, neighbor) == CellViewType::FREE) {
+        if (isOpen(cellAt(game, neighbor))) {
             count++;
         }
     }
     return count;
 }
 
-std::optional<GridPosition> EnemyStateMachine::nearestVisible(GameApi& game, CellViewType type) {
+std::optional<GridPosition> EnemyStateMachine::nearestOccupant(GameApi& game, OccupantView occupant) {
+    return nearestVisible(game, [occupant](const VisibleCell& cell) { return cell.occupant == occupant; });
+}
+
+std::optional<GridPosition> EnemyStateMachine::nearestTerritory(GameApi& game, TerritoryView territory) {
+    return nearestVisible(game, [territory](const VisibleCell& cell) { return cell.territory == territory; });
+}
+
+std::optional<GridPosition> EnemyStateMachine::nearestVisible(
+    GameApi& game, const std::function<bool(const VisibleCell&)>& match) {
     GridPosition from = game.getAgentPosition();
     std::optional<GridPosition> best;
     int bestDistance = std::numeric_limits<int>::max();
     for (const auto& row : game.getVisibleGrid()) {
         for (const auto& cell : row) {
-            if (cell.type == type) {
+            if (match(cell)) {
                 int distance = MovementUtils::manhattanDistance(from, cell.position);
                 if (distance < bestDistance) {
                     bestDistance = distance;
@@ -282,9 +313,30 @@ GridPosition EnemyStateMachine::destination(GameApi& game, Direction direction) 
     return MovementUtils::nextPosition(game.getAgentPosition(), direction);
 }
 
-CellViewType EnemyStateMachine::typeAt(GameApi& game, GridPosition position) {
-    auto cell = MovementUtils::findCell(game.getVisibleGrid(), position);
-    return cell.has_value() ? cell->type : CellViewType::FREE;
+// Absent when position is off the board (a corner or edge), not an open cell.
+std::optional<VisibleCell> EnemyStateMachine::cellAt(GameApi& game, GridPosition position) {
+    if (!MovementUtils::isWithinBoard(position, game.getBoardWidth(), game.getBoardHeight())) {
+        return std::nullopt;
+    }
+    auto found = MovementUtils::findCell(game.getVisibleGrid(), position);
+    if (found.has_value()) {
+        return found;
+    }
+    return VisibleCell{position, OccupantView::EMPTY, TerritoryView::UNOWNED};
+}
+
+std::optional<OccupantView> EnemyStateMachine::occupantAt(GameApi& game, GridPosition position) {
+    auto cell = cellAt(game, position);
+    return cell.has_value() ? std::optional<OccupantView>(cell->occupant) : std::nullopt;
+}
+
+std::optional<TerritoryView> EnemyStateMachine::territoryAt(GameApi& game, GridPosition position) {
+    auto cell = cellAt(game, position);
+    return cell.has_value() ? std::optional<TerritoryView>(cell->territory) : std::nullopt;
+}
+
+bool EnemyStateMachine::isOpen(const std::optional<VisibleCell>& cell) {
+    return cell.has_value() && cell->occupant == OccupantView::EMPTY && cell->territory == TerritoryView::UNOWNED;
 }
 
 Direction EnemyStateMachine::fallback() {

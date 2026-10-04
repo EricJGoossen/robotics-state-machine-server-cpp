@@ -53,8 +53,6 @@ TEST(VisibilityServiceTest, windowClipsAtTheBoardCorner) {
 }
 
 TEST(VisibilityServiceTest, ownershipTranslatesToSelfAndOpponentRelativeToViewer) {
-    // Territory cells distinct from either agent's current position, so
-    // the AGENT precedence rule doesn't mask the TERRITORY type being checked.
     GridPosition player0Territory{4, 5};
     GridPosition player1Territory{7, 6};
     GameState state = territorygame::test::twoPlayerState(
@@ -65,11 +63,15 @@ TEST(VisibilityServiceTest, ownershipTranslatesToSelfAndOpponentRelativeToViewer
     auto fromPlayer0 = service.computeVisibleGrid(state, player0);
     auto fromPlayer1 = service.computeVisibleGrid(state, player1);
 
-    EXPECT_EQ(cellAt(fromPlayer0, player0Territory).type, CellViewType::SELF_TERRITORY);
-    EXPECT_EQ(cellAt(fromPlayer0, player1Territory).type, CellViewType::OPPONENT_TERRITORY);
+    EXPECT_EQ(cellAt(fromPlayer0, player0Territory).occupant, OccupantView::EMPTY);
+    EXPECT_EQ(cellAt(fromPlayer0, player0Territory).territory, TerritoryView::SELF);
+    EXPECT_EQ(cellAt(fromPlayer0, player1Territory).occupant, OccupantView::EMPTY);
+    EXPECT_EQ(cellAt(fromPlayer0, player1Territory).territory, TerritoryView::OPPONENT);
     // Same cells, viewed by the other player, flip labels.
-    EXPECT_EQ(cellAt(fromPlayer1, player0Territory).type, CellViewType::OPPONENT_TERRITORY);
-    EXPECT_EQ(cellAt(fromPlayer1, player1Territory).type, CellViewType::SELF_TERRITORY);
+    EXPECT_EQ(cellAt(fromPlayer1, player0Territory).occupant, OccupantView::EMPTY);
+    EXPECT_EQ(cellAt(fromPlayer1, player0Territory).territory, TerritoryView::OPPONENT);
+    EXPECT_EQ(cellAt(fromPlayer1, player1Territory).occupant, OccupantView::EMPTY);
+    EXPECT_EQ(cellAt(fromPlayer1, player1Territory).territory, TerritoryView::SELF);
 }
 
 TEST(VisibilityServiceTest, agentPositionsAreReportedAsSelfOrOpponentAgent) {
@@ -79,31 +81,45 @@ TEST(VisibilityServiceTest, agentPositionsAreReportedAsSelfOrOpponentAgent) {
 
     auto grid = service.computeVisibleGrid(state, player0);
 
-    EXPECT_EQ(cellAt(grid, GridPosition{5, 5}).type, CellViewType::SELF_AGENT);
-    EXPECT_EQ(cellAt(grid, GridPosition{6, 5}).type, CellViewType::OPPONENT_AGENT);
+    EXPECT_EQ(cellAt(grid, GridPosition{5, 5}).occupant, OccupantView::SELF_AGENT);
+    EXPECT_EQ(cellAt(grid, GridPosition{6, 5}).occupant, OccupantView::OPPONENT_AGENT);
 }
 
-TEST(VisibilityServiceTest, precedenceIsAgentThenTrailThenTerritoryThenFree) {
+TEST(VisibilityServiceTest, trailOccupantDoesNotHideTerritory) {
     GameState state = territorygame::test::twoPlayerState(
         10, 10, GridPosition{5, 5}, {GridPosition{5, 5}}, GridPosition{0, 0}, {}, 10);
-    // A cell that is simultaneously player0's territory and player0's trail:
-    // trail wins.
     GridPosition trailOverTerritory{4, 5};
     state.getBoard().setTerritoryOwner(trailOverTerritory, player0);
     state.getBoard().setTrailOwner(trailOverTerritory, player0);
 
     VisibilityService service(9);
-    auto grid = service.computeVisibleGrid(state, player0);
+    VisibleCell cell = cellAt(service.computeVisibleGrid(state, player0), trailOverTerritory);
 
-    EXPECT_EQ(cellAt(grid, trailOverTerritory).type, CellViewType::SELF_TRAIL);
+    EXPECT_EQ(cell.occupant, OccupantView::SELF_TRAIL);
+    EXPECT_EQ(cell.territory, TerritoryView::SELF);
 }
 
-TEST(VisibilityServiceTest, unoccupiedUnownedCellIsFree) {
+TEST(VisibilityServiceTest, opponentTrailOnViewerLandReportsBothLayers) {
+    GameState state = territorygame::test::twoPlayerState(
+        10, 10, GridPosition{5, 5}, {GridPosition{5, 5}}, GridPosition{0, 0}, {}, 10);
+    GridPosition cut{4, 5};
+    state.getBoard().setTerritoryOwner(cut, player0);
+    state.getBoard().setTrailOwner(cut, player1);
+
+    VisibilityService service(9);
+    VisibleCell cell = cellAt(service.computeVisibleGrid(state, player0), cut);
+
+    EXPECT_EQ(cell.occupant, OccupantView::OPPONENT_TRAIL);
+    EXPECT_EQ(cell.territory, TerritoryView::SELF);
+}
+
+TEST(VisibilityServiceTest, unoccupiedUnownedCellIsEmptyAndUnowned) {
     GameState state = territorygame::test::twoPlayerState(
         10, 10, GridPosition{5, 5}, {GridPosition{5, 5}}, GridPosition{0, 0}, {GridPosition{0, 0}}, 10);
     VisibilityService service(9);
 
-    auto grid = service.computeVisibleGrid(state, player0);
+    VisibleCell cell = cellAt(service.computeVisibleGrid(state, player0), GridPosition{6, 5});
 
-    EXPECT_EQ(cellAt(grid, GridPosition{6, 5}).type, CellViewType::FREE);
+    EXPECT_EQ(cell.occupant, OccupantView::EMPTY);
+    EXPECT_EQ(cell.territory, TerritoryView::UNOWNED);
 }

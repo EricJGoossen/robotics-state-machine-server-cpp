@@ -30,7 +30,8 @@ public:
     // Checks the two mechanical invalid-move rules available before
     // submission: board bounds and whether the adjacent destination is
     // currently the opponent's agent. Makes no strategic decision and picks
-    // no alternative direction.
+    // no alternative direction. Notably, still allows moving onto the
+    // player's own trail.
     static bool isValidMove(const territorygame::api::GameApi& game, territorygame::api::Direction direction);
 
     // Finds the visible cell at an absolute position, if it's within the visible window.
@@ -38,7 +39,8 @@ public:
         const std::vector<std::vector<territorygame::api::VisibleCell>>& visibleGrid,
         territorygame::api::GridPosition position);
 
-    // Directions that are mechanically valid right now: in bounds and not onto the opponent's agent.
+    // Directions that are mechanically valid right now: in bounds and not onto
+    // the opponent's agent. Still includes moves onto the player's own trail.
     static std::vector<territorygame::api::Direction> validDirections(const territorygame::api::GameApi& game);
 
     // Picks a uniformly random direction.

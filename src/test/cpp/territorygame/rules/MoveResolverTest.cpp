@@ -163,6 +163,39 @@ TEST(MoveResolverTest, crossingOpponentTrailIncrementsTheMoverKillCount) {
     EXPECT_EQ(state.getKillCount(player1), 0);
 }
 
+TEST(MoveResolverTest, closingALoopOnACellThatKillsTheOpponentPreservesTheirStartingTerritory) {
+    // Player0 returns home (closing a loop) onto a cell that also has
+    // player1's trail, so both a capture and a kill resolve in one move.
+    // Player0's existing territory already rings player1's start, so the
+    // capture flood-fill would otherwise paint over the start platform
+    // that respawn just restored.
+    GridPosition p1Start{4, 4};
+    std::vector<GridPosition> p0Territory{
+        GridPosition{1, 1},
+        GridPosition{3, 3}, GridPosition{4, 3}, GridPosition{5, 3},
+        GridPosition{3, 4}, GridPosition{5, 4},
+        GridPosition{3, 5}, GridPosition{4, 5}, GridPosition{5, 5}};
+    GameState state = territorygame::test::twoPlayerState(
+        8, 8, GridPosition{1, 1}, p0Territory, p1Start, {p1Start}, 10);
+    MoveResolver resolver = makeResolver();
+
+    state.getPlayer(player0).getAgent().setPosition(GridPosition{1, 2});
+    state.getBoard().setTrailOwner(GridPosition{1, 2}, player0);
+    state.getPlayer(player0).getAgent().appendTrail(GridPosition{1, 2});
+
+    state.getPlayer(player1).getAgent().setPosition(GridPosition{1, 3});
+    state.getBoard().setTrailOwner(GridPosition{1, 1}, player1);
+    state.getPlayer(player1).getAgent().appendTrail(GridPosition{1, 1});
+
+    MoveResult result = resolver.resolve(state, player0, Direction::NORTH);
+
+    EXPECT_EQ(result, MoveResult::CAPTURED);
+    EXPECT_EQ(state.getKillCount(player0), 1);
+    EXPECT_EQ(state.getPlayer(player1).getAgent().getPosition(), p1Start);
+    EXPECT_EQ(state.getBoard().territoryOwnerAt(p1Start), player1);
+    EXPECT_EQ(state.getBoard().territoryCount(player1), 1);
+}
+
 TEST(MoveResolverTest, movingOntoOpponentsTrailAtItsOwnRespawnPointDoesNotStackAgents) {
     // Regression test for the bug where killing an opponent by stepping
     // onto a trail cell that happens to sit on the opponent's own

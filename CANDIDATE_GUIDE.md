@@ -144,9 +144,11 @@ it works as a key in `std::unordered_map`/`std::unordered_set`.
 
 ### VisibleCell
 ```cpp
-struct VisibleCell { GridPosition position; CellViewType type; };
+struct VisibleCell { GridPosition position; OccupantView occupant; TerritoryView territory; };
 ```
-One cell you can see, and what's in it.
+One cell you can see. `occupant` is the head/trail layer; `territory` is
+the land underneath. Both are always present -- a trail does not hide
+territory.
 
 ### Direction
 ```cpp
@@ -161,17 +163,22 @@ enum class MoveResult { MOVED, CAPTURED, DIED, INVALID };
 What `move()` just did: `MOVED` (normal step), `CAPTURED` (your trail
 closed), `DIED` (you hit a trail), or `INVALID` (nothing happened).
 
-### CellViewType
+### OccupantView
 ```cpp
-enum class CellViewType {
-    FREE, SELF_TERRITORY, OPPONENT_TERRITORY,
-    SELF_TRAIL, OPPONENT_TRAIL, SELF_AGENT, OPPONENT_AGENT
+enum class OccupantView {
+    EMPTY, SELF_TRAIL, OPPONENT_TRAIL, SELF_AGENT, OPPONENT_AGENT
 };
 ```
-What's in a cell you can see. You'll never see the opponent's real player
-number, only `SELF_*` or `OPPONENT_*`. If more than one thing is true about
-a cell, precedence is agent > trail > territory > free: an agent standing on
-a trail shows as the agent, not the trail.
+What's standing or trailing on the cell. You'll never see the opponent's
+real player number, only `SELF_*` or `OPPONENT_*`. An agent standing on a
+trail shows as the agent, not the trail.
+
+### TerritoryView
+```cpp
+enum class TerritoryView { UNOWNED, SELF, OPPONENT };
+```
+Who owns the land. Independent of `occupant`. Empty unowned space is
+`(EMPTY, UNOWNED)`.
 
 ## Helpers (`territorygame::helpers`)
 
@@ -230,7 +237,7 @@ of your controller so it isn't reseeded every turn.
 ```cpp
 ObservedBoard(int width, int height)
 void update(const std::vector<std::vector<VisibleCell>>& visibleGrid)   // call this each turn
-std::optional<CellViewType> get(GridPosition position) const
+std::optional<VisibleCell> get(GridPosition position) const
 bool hasObserved(GridPosition position) const
 void clear()
 ```
@@ -253,7 +260,7 @@ about once the basics are working:
   maybe play safer.
 - **Getting home efficiently.** `getRespawnPosition()` isn't necessarily
   your nearest owned cell once you've captured territory elsewhere.
-  Scanning `getVisibleGrid()` for the nearest `SELF_TERRITORY` cell can do
+  Scanning `getVisibleGrid()` for the nearest `TerritoryView::SELF` cell can do
   better.
 - **Trail length is a trade-off.** Longer trails claim more area on
   capture but leave you exposed for longer.

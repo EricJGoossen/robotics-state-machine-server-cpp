@@ -98,6 +98,8 @@ add_executable(territory_capture_tests
     ${TEST_CPP_ROOT}/territorygame/engine/GameSnapshotTest.cpp
     ${TEST_CPP_ROOT}/territorygame/engine/TurnManagerTest.cpp
     ${TEST_CPP_ROOT}/territorygame/engine/GameEngineTest.cpp
+    ${TEST_CPP_ROOT}/territorygame/gui/SnapshotHistoryTest.cpp
+    ${TEST_CPP_ROOT}/territorygame/gui/EngineSnapshotIngestTest.cpp
     ${TEST_CPP_ROOT}/candidate/examples/BasicStateMachineTest.cpp
 )
 target_include_directories(territory_capture_tests PRIVATE ${TEST_CPP_ROOT})

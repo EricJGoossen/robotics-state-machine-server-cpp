@@ -8,10 +8,12 @@
 #include <vector>
 
 #include "territorygame/api/AgentController.hpp"
-#include "territorygame/api/CellViewType.hpp"
 #include "territorygame/api/Direction.hpp"
 #include "territorygame/api/GameApi.hpp"
 #include "territorygame/api/GridPosition.hpp"
+#include "territorygame/api/OccupantView.hpp"
+#include "territorygame/api/TerritoryView.hpp"
+#include "territorygame/api/VisibleCell.hpp"
 
 namespace territorygame::controller {
 
@@ -102,20 +104,36 @@ private:
   int openNeighborCount(territorygame::api::GameApi &game,
                         territorygame::api::Direction direction);
   std::optional<territorygame::api::GridPosition>
+  nearestOccupant(territorygame::api::GameApi &game,
+                   territorygame::api::OccupantView occupant);
+  std::optional<territorygame::api::GridPosition>
+  nearestTerritory(territorygame::api::GameApi &game,
+                    territorygame::api::TerritoryView territory);
+  std::optional<territorygame::api::GridPosition>
   nearestVisible(territorygame::api::GameApi &game,
-                 territorygame::api::CellViewType type);
+                 const std::function<bool(const territorygame::api::VisibleCell &)> &match);
   territorygame::api::GridPosition
   destination(territorygame::api::GameApi &game,
               territorygame::api::Direction direction);
-  territorygame::api::CellViewType
-  typeAt(territorygame::api::GameApi &game,
+  // Absent when position is off the board (a corner or edge), not merely an open cell.
+  std::optional<territorygame::api::VisibleCell>
+  cellAt(territorygame::api::GameApi &game,
          territorygame::api::GridPosition position);
+  std::optional<territorygame::api::OccupantView>
+  occupantAt(territorygame::api::GameApi &game,
+             territorygame::api::GridPosition position);
+  std::optional<territorygame::api::TerritoryView>
+  territoryAt(territorygame::api::GameApi &game,
+              territorygame::api::GridPosition position);
+  static bool isOpen(const std::optional<territorygame::api::VisibleCell> &cell);
   territorygame::api::Direction fallback();
 
   std::mt19937_64 random_;
   State currentState_ = State::EXPANDING;
   int previousOwnedTerritoryCount_ = 0;
   bool firstMove_ = true;
+  std::optional<territorygame::api::Direction> direction_;
+  int bestOpenNeighborCount_ = 0;
 };
 
 } // namespace territorygame::controller

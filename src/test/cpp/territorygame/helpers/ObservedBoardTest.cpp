@@ -2,8 +2,9 @@
 
 #include "territorygame/helpers/ObservedBoard.hpp"
 
-using territorygame::api::CellViewType;
 using territorygame::api::GridPosition;
+using territorygame::api::OccupantView;
+using territorygame::api::TerritoryView;
 using territorygame::api::VisibleCell;
 using territorygame::helpers::ObservedBoard;
 
@@ -18,29 +19,37 @@ TEST(ObservedBoardTest, unobservedCellHasNoValue) {
 TEST(ObservedBoardTest, updateStoresLatestValuePerCell) {
     ObservedBoard board(5, 5);
     GridPosition position{1, 1};
-    std::vector<std::vector<VisibleCell>> grid{{VisibleCell{position, CellViewType::SELF_TERRITORY}}};
+    VisibleCell stored{position, OccupantView::EMPTY, TerritoryView::SELF};
+    std::vector<std::vector<VisibleCell>> grid{{stored}};
 
     board.update(grid);
 
     EXPECT_TRUE(board.hasObserved(position));
-    EXPECT_EQ(board.get(position), std::optional<CellViewType>(CellViewType::SELF_TERRITORY));
+    auto found = board.get(position);
+    EXPECT_TRUE(found.has_value());
+    EXPECT_EQ(found->occupant, stored.occupant);
+    EXPECT_EQ(found->territory, stored.territory);
 }
 
 TEST(ObservedBoardTest, laterUpdateOverwritesEarlierValueForSameCell) {
     ObservedBoard board(5, 5);
     GridPosition position{1, 1};
+    VisibleCell later{position, OccupantView::EMPTY, TerritoryView::OPPONENT};
 
-    board.update({{VisibleCell{position, CellViewType::FREE}}});
-    board.update({{VisibleCell{position, CellViewType::OPPONENT_TERRITORY}}});
+    board.update({{VisibleCell{position, OccupantView::EMPTY, TerritoryView::UNOWNED}}});
+    board.update({{later}});
 
-    EXPECT_EQ(board.get(position), std::optional<CellViewType>(CellViewType::OPPONENT_TERRITORY));
+    auto found = board.get(position);
+    EXPECT_TRUE(found.has_value());
+    EXPECT_EQ(found->occupant, later.occupant);
+    EXPECT_EQ(found->territory, later.territory);
 }
 
 TEST(ObservedBoardTest, updateDoesNotAffectCellsOutsideTheGivenGrid) {
     ObservedBoard board(5, 5);
     GridPosition observed{1, 1};
     GridPosition untouched{3, 3};
-    board.update({{VisibleCell{observed, CellViewType::SELF_TERRITORY}}});
+    board.update({{VisibleCell{observed, OccupantView::EMPTY, TerritoryView::SELF}}});
 
     EXPECT_FALSE(board.hasObserved(untouched));
 }
@@ -48,7 +57,7 @@ TEST(ObservedBoardTest, updateDoesNotAffectCellsOutsideTheGivenGrid) {
 TEST(ObservedBoardTest, clearForgetsAllPreviouslyObservedCells) {
     ObservedBoard board(5, 5);
     GridPosition position{1, 1};
-    board.update({{VisibleCell{position, CellViewType::SELF_TERRITORY}}});
+    board.update({{VisibleCell{position, OccupantView::EMPTY, TerritoryView::SELF}}});
 
     board.clear();
 

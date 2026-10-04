@@ -40,7 +40,7 @@ bool MovementUtils::isValidMove(const GameApi& game, Direction direction) {
     if (!cell.has_value()) {
         return true;
     }
-    return cell->type != CellViewType::OPPONENT_AGENT;
+    return cell->occupant != OccupantView::OPPONENT_AGENT;
 }
 
 std::optional<VisibleCell> MovementUtils::findCell(

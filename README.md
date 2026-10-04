@@ -91,9 +91,9 @@ src/main/resources/
 
 src/main/cpp/territorygame/
   api/          Candidate-facing types: GameApi, AgentController,
-                GridPosition, VisibleCell, CellViewType, Direction,
-                MoveResult. Nothing outside this namespace is ever handed
-                to candidate code.
+                GridPosition, VisibleCell, OccupantView, TerritoryView,
+                Direction, MoveResult. Nothing outside this namespace is
+                ever handed to candidate code.
 
   domain/       Authoritative game state: PlayerId, GameConfig, Agent,
                 Player, Board, GameState. Not exposed to candidates or

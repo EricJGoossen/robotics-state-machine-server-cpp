@@ -29,7 +29,21 @@ void TerritoryResolver::applyCapture(GameState& state, PlayerId capturerId) {
         board.setTerritoryOwner(enclosedCell, capturerId);
     }
 
+    restoreOpponentStartingTerritories(state, capturerId);
+
     agent.clearTrail();
+}
+
+void TerritoryResolver::restoreOpponentStartingTerritories(GameState& state, PlayerId capturerId) {
+    Board& board = state.getBoard();
+    for (Player& player : state.getPlayers()) {
+        if (player.getId() == capturerId) {
+            continue;
+        }
+        for (const auto& cell : player.getStartingTerritory()) {
+            board.setTerritoryOwner(cell, player.getId());
+        }
+    }
 }
 
 std::vector<GridPosition> TerritoryResolver::findEnclosedCells(Board& board, PlayerId capturerId) {
